@@ -11,3 +11,4 @@
 /mcef/
 /logs/
 /.kotlin/
+.claude/settings.local.json
