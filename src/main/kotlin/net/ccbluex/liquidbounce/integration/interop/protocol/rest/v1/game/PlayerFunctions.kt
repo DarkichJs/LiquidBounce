@@ -59,6 +59,7 @@ fun getPlayerData(requestObject: RequestObject) = nullableResponse(mc.player?.le
 // GET /api/v1/client/player/inventory
 @Suppress("UNUSED_PARAMETER", "SwallowedException")
 fun getPlayerInventory(requestObject: RequestObject) = try {
+    val player = mc.player ?: return httpNoContent()
     httpOk(interopGson.toJsonTree(PlayerInventoryData.fromPlayer(player)))
 } catch (e: Exception) {
     // Return empty inventory data if player inventory is null or corrupted
