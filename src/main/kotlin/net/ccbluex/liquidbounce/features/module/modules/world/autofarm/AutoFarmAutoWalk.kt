@@ -29,12 +29,22 @@ import net.ccbluex.liquidbounce.utils.inventory.Slots
 import net.ccbluex.liquidbounce.utils.inventory.hasInventorySpace
 import net.ccbluex.liquidbounce.utils.kotlin.Priority
 import net.ccbluex.liquidbounce.utils.math.sq
+import net.ccbluex.liquidbounce.utils.movement.DirectionalInput
+import net.ccbluex.liquidbounce.utils.movement.getDegreesRelativeToView
+import net.ccbluex.liquidbounce.utils.movement.getDirectionalInputForDegrees
 import net.minecraft.client.gui.screen.ingame.HandledScreen
 import net.minecraft.entity.ItemEntity
+import net.minecraft.item.Items
 import net.minecraft.util.math.Vec3d
 import java.util.EnumSet
 
 object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", false) {
+
+    // Maximum distance to walk to targets
+    private val maxWalkDistance by float("MaxDistance", 16f, 4f..32f).onChanged {
+        maxWalkDistanceSquared = it.sq()
+    }
+    private var maxWalkDistanceSquared: Float = maxWalkDistance.sq()
 
     // Makes the player move to farmland blocks where there is a need for crop replacement
     private val toPlace by boolean("ToPlace", true)
@@ -58,11 +68,59 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
     var walkTarget: Vec3d? = null
 
     private fun findWalkToItem() = world.entities.filter {
-        it is ItemEntity && it.squaredDistanceTo(player) < toItems.rangeSquared
+        it is ItemEntity && it.squaredDistanceTo(player) < toItems.rangeSquared && isAllowedItem(it)
     }.minByOrNull { it.squaredDistanceTo(player) }?.pos
+    
+    private fun isAllowedItem(itemEntity: ItemEntity): Boolean {
+        val item = itemEntity.stack.item
+        
+        return when {
+            ModuleAutoFarm.AutoGarden.enabled -> isAutoGardenAllowedItem(item)
+            ModuleAutoFarm.CropFilter.enabled -> isCropFilterAllowedItem(item)
+            else -> true // В обычном режиме собираем все
+        }
+    }
+    
+    private fun isAutoGardenAllowedItem(item: net.minecraft.item.Item): Boolean {
+        return when (item) {
+            Items.WHEAT, Items.WHEAT_SEEDS -> ModuleAutoFarm.AutoGarden.targetWheat
+            Items.CARROT -> ModuleAutoFarm.AutoGarden.targetCarrot
+            Items.POTATO, Items.POISONOUS_POTATO -> ModuleAutoFarm.AutoGarden.targetPotato
+            Items.BEETROOT, Items.BEETROOT_SEEDS -> ModuleAutoFarm.AutoGarden.targetBeetroot
+            Items.NETHER_WART -> ModuleAutoFarm.AutoGarden.targetNetherWart
+            Items.PUMPKIN -> ModuleAutoFarm.AutoGarden.targetPumpkin
+            Items.MELON_SLICE -> ModuleAutoFarm.AutoGarden.targetMelon
+            Items.COCOA_BEANS -> ModuleAutoFarm.AutoGarden.targetCocoa
+            else -> false
+        }
+    }
+    
+    private fun isCropFilterAllowedItem(item: net.minecraft.item.Item): Boolean {
+        return when (item) {
+            Items.WHEAT, Items.WHEAT_SEEDS -> ModuleAutoFarm.CropFilter.wheat
+            Items.CARROT -> ModuleAutoFarm.CropFilter.carrot
+            Items.POTATO, Items.POISONOUS_POTATO -> ModuleAutoFarm.CropFilter.potato
+            Items.BEETROOT, Items.BEETROOT_SEEDS -> ModuleAutoFarm.CropFilter.beetroot
+            Items.NETHER_WART -> ModuleAutoFarm.CropFilter.netherWart
+            Items.PUMPKIN -> ModuleAutoFarm.CropFilter.pumpkin
+            Items.MELON_SLICE -> ModuleAutoFarm.CropFilter.melon
+            Items.SUGAR_CANE -> ModuleAutoFarm.CropFilter.sugarCane
+            Items.CACTUS -> ModuleAutoFarm.CropFilter.cactus
+            Items.KELP -> ModuleAutoFarm.CropFilter.kelp
+            Items.BAMBOO -> ModuleAutoFarm.CropFilter.bamboo
+            Items.COCOA_BEANS -> ModuleAutoFarm.CropFilter.cocoa
+            else -> false
+        }
+    }
 
     fun updateWalkTarget(): Boolean {
         if (!enabled) return false
+        
+        // Don't update walk target if depositing to hopper
+        if (ModuleAutoFarm.hopperTarget != null) {
+            walkTarget = ModuleAutoFarm.hopperTarget!!.toCenterPos()
+            return true
+        }
 
         val invHasSpace = hasInventorySpace()
         if (!invHasSpace && invHadSpace && toItems.enabled) {
@@ -99,14 +157,23 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
         if (toPlace) {
             for (item in Slots.OffhandWithHotbar.items) {
                 when (item) {
-                    in ModuleAutoFarm.itemsForFarmland -> allowedItems.add(AutoFarmTrackedStates.Farmland)
-                    in ModuleAutoFarm.itemsForSoulsand -> allowedItems.add(AutoFarmTrackedStates.Soulsand)
+                    in ModuleAutoFarm.filteredFarmlandItems -> allowedItems.add(AutoFarmTrackedStates.Farmland)
+                    in ModuleAutoFarm.filteredSoulsandItems -> allowedItems.add(AutoFarmTrackedStates.Soulsand)
                 }
             }
         }
 
         val closestBlock = AutoFarmBlockTracker.iterate().mapNotNull { (pos, state) ->
-            if (state in allowedItems) pos.toCenterPos() else null
+            if (state in allowedItems) {
+                val centerPos = pos.toCenterPos()
+                if (player.squaredDistanceTo(centerPos) <= maxWalkDistanceSquared) {
+                    centerPos
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
         }.minByOrNull(player::squaredDistanceTo)
 
         return closestBlock
@@ -124,7 +191,19 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
             return@handler
         }
 
-        event.directionalInput = event.directionalInput.copy(forwards = true)
+        val target = walkTarget!!
+        val positionRelativeToPlayer = target.subtract(player.pos)
+        val distance = positionRelativeToPlayer.length()
+        
+        // If we're close enough, don't move
+        if (distance < 0.5) {
+            event.directionalInput = DirectionalInput.NONE
+            return@handler
+        }
+        
+        // Use the existing utility functions with current player yaw for stable movement
+        val yawDifference = getDegreesRelativeToView(positionRelativeToPlayer, player.yaw)
+        event.directionalInput = getDirectionalInputForDegrees(DirectionalInput.NONE, yawDifference)
         player.isSprinting = true
     }
 
@@ -137,8 +216,14 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
             event.jump = true
         }
 
-        // Auto jump
+        // Auto jump when enabled
         if (autoJump && player.horizontalCollision && walkTarget!!.y > player.y) {
+            event.jump = true
+        }
+        
+        // Always auto jump when colliding horizontally and not moving
+        if (player.horizontalCollision && player.velocity.x.let { kotlin.math.abs(it) } < 0.1 && 
+            player.velocity.z.let { kotlin.math.abs(it) } < 0.1) {
             event.jump = true
         }
     }

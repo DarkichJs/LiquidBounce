@@ -63,7 +63,46 @@ object AutoFarmVisualizer : ToggleableConfigurable(ModuleAutoFarm, "Visualize", 
 
         private val colorRainbow by boolean("Rainbow", false)
 
-        private object CurrentTarget : ToggleableConfigurable(this.parent, "CurrentTarget", true) {
+        private object HopperVisualization : ToggleableConfigurable(this.parent, "Hoppers", true) {
+        private val color by color("HopperColor", Color4b(128, 128, 128, 255)) // Gray color for hoppers
+        private val colorRainbow by boolean("Rainbow", false)
+
+        @Suppress("CognitiveComplexMethod")
+        fun render(renderEnvironment: RenderEnvironment) {
+            if (!this.enabled || !ModuleAutoFarm.AutoChest.enabled) return
+            
+            with(renderEnvironment) {
+                for (hopperPos in ModuleAutoFarm.foundHoppers) {
+                    withPosition(Vec3(hopperPos)) {
+                        withColor((if (colorRainbow) rainbow() else color).with(a = 100)) {
+                            drawSolidBox(FULL_BOX)
+                        }
+                        if (outline) {
+                            withColor((if (colorRainbow) rainbow() else color).with(a = 200)) {
+                                drawOutlinedBox(FULL_BOX)
+                            }
+                        }
+                    }
+                }
+                
+                // Highlight target hopper differently
+                ModuleAutoFarm.hopperTarget?.let { targetHopper ->
+                    withPosition(Vec3(targetHopper)) {
+                        withColor(Color4b(255, 0, 0, 150)) { // Red for target hopper
+                            drawSolidBox(FULL_BOX)
+                        }
+                        if (outline) {
+                            withColor(Color4b(255, 0, 0, 255)) {
+                                drawOutlinedBox(FULL_BOX)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private object CurrentTarget : ToggleableConfigurable(this.parent, "CurrentTarget", true) {
             private val color by color("Color", Color4b(66, 120, 245, 255))
             private val colorRainbow by boolean("Rainbow", false)
 
@@ -90,6 +129,7 @@ object AutoFarmVisualizer : ToggleableConfigurable(ModuleAutoFarm, "Visualize", 
 
             renderEnvironmentForWorld(matrixStack) {
                 CurrentTarget.render(this)
+                HopperVisualization.render(this)
                 for ((pos, type) in AutoFarmBlockTracker.iterate()) {
                     if ((pos.x - player.x).sq() + (pos.z - player.z).sq() > rangeSquared) continue
 

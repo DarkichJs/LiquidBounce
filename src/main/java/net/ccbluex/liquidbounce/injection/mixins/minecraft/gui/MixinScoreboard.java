@@ -28,6 +28,8 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Fixes a ViaFabricPlus bug where it would not correctly handle the scoreboard data, resulting in a disconnect.
@@ -56,6 +58,25 @@ public abstract class MixinScoreboard {
     private void noCrash2(String scoreHolderName, Team team, CallbackInfo ci) {
         var antiExploit = ModuleAntiExploit.INSTANCE;
         if (antiExploit.getRunning() && antiExploit.getVfpScoreboardFix() && getScoreHolderTeam(scoreHolderName) != team) {
+            ci.cancel();
+        }
+    }
+    
+    /**
+     * Additional protection against IllegalStateException in removeScoreHolderFromTeam
+     * This prevents crashes when servers send invalid team removal packets by wrapping in try-catch
+     */
+    @Inject(method = "removeScoreHolderFromTeam", at = @At("HEAD"), cancellable = true)
+    private void safeRemoveScoreHolderFromTeam(String scoreHolderName, Team team, CallbackInfo ci) {
+        try {
+            // Check if the player is actually on the team before attempting removal
+            Team currentTeam = getScoreHolderTeam(scoreHolderName);
+            if (currentTeam != team) {
+                // Player is not on this team, cancel the removal to prevent IllegalStateException
+                ci.cancel();
+            }
+        } catch (Exception e) {
+            // If any exception occurs during the check, cancel to prevent crash
             ci.cancel();
         }
     }

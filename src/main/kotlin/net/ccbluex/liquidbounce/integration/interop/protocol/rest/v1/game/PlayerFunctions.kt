@@ -55,9 +55,14 @@ import kotlin.math.min
 fun getPlayerData(requestObject: RequestObject) = httpOk(interopGson.toJsonTree(PlayerData.fromPlayer(player)))
 
 // GET /api/v1/client/player/inventory
-@Suppress("UNUSED_PARAMETER")
-fun getPlayerInventory(requestObject: RequestObject) =
+@Suppress("UNUSED_PARAMETER", "SwallowedException")
+fun getPlayerInventory(requestObject: RequestObject) = try {
     httpOk(interopGson.toJsonTree(PlayerInventoryData.fromPlayer(player)))
+} catch (e: Exception) {
+    // Return empty inventory data if player inventory is null or corrupted
+    // This prevents crashes when AutoFarm modifies inventory during API calls
+    httpOk(interopGson.toJsonTree(PlayerInventoryData.empty()))
+}
 
 // GET /api/v1/client/crosshair
 @Suppress("UNUSED_PARAMETER")
@@ -131,10 +136,22 @@ data class PlayerInventoryData(
 ) {
 
     companion object {
-        fun fromPlayer(player: PlayerEntity) = PlayerInventoryData(
-            armor = player.inventory.armor.map(ItemStack::copy),
-            main = player.inventory.main.map(ItemStack::copy),
-            crafting = player.playerScreenHandler.craftingInput.heldStacks.map(ItemStack::copy)
+        @Suppress("SwallowedException")
+        fun fromPlayer(player: PlayerEntity) = try {
+            PlayerInventoryData(
+                armor = player.inventory?.armor?.map(ItemStack::copy) ?: emptyList(),
+                main = player.inventory?.main?.map(ItemStack::copy) ?: emptyList(),
+                crafting = player.playerScreenHandler?.craftingInput?.heldStacks?.map(ItemStack::copy) ?: emptyList()
+            )
+        } catch (e: Exception) {
+            // Return empty data if inventory access fails during modifications
+            empty()
+        }
+        
+        fun empty() = PlayerInventoryData(
+            armor = emptyList(),
+            main = emptyList(),
+            crafting = emptyList()
         )
     }
 
