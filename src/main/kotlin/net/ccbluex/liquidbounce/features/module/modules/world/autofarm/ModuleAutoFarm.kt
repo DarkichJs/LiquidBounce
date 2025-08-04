@@ -178,7 +178,16 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
     internal val filteredJungleLogItems: Array<net.minecraft.item.Item>
         get() = when {
-            AutoGarden.enabled -> if (AutoGarden.targetCocoa) itemsForJungleLogs else emptyArray()
+            AutoGarden.enabled -> {
+                val result = if (AutoGarden.targetCocoa) itemsForJungleLogs else emptyArray()
+                // Debug only when AutoGarden is enabled and occasionally to avoid spam
+                if (Math.random() < 0.01) { // 1% chance to avoid spam
+                    val items = result.contentToString()
+                    println("[AutoFarm] AutoGarden enabled, targetCocoa=${AutoGarden.targetCocoa}, items=$items")
+                }
+                result
+            }
+            CropFilter.enabled -> itemsForJungleLogs // В обычном режиме разрешаем кокао
             else -> itemsForJungleLogs
         }
 
@@ -187,7 +196,13 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     private val itemForSoulSand
         get() = Slots.Hotbar.findClosestSlot(items = filteredSoulsandItems)
     private val itemForJungleLog
-        get() = Slots.Hotbar.findClosestSlot(items = filteredJungleLogItems)
+        get() = Slots.Hotbar.findClosestSlot(items = filteredJungleLogItems).also { slot ->
+            // Debug only occasionally to avoid spam
+            if (Math.random() < 0.01 && filteredJungleLogItems.isNotEmpty()) { // 1% chance to avoid spam
+                val items = filteredJungleLogItems.contentToString()
+                println("[AutoFarm] Looking for jungle log items: $items, found slot: $slot")
+            }
+        }
     
     // Hopper management functions
     @Suppress("CognitiveComplexMethod", "NestedBlockDepth")
@@ -517,6 +532,66 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     }
 
     var currentTarget: BlockPos? = null
+    
+    // Micro-movement variables for failed interactions
+    private var lastFailedTarget: BlockPos? = null
+    private var failedAttempts = 0
+    private var lastMicroMovement = 0L
+    private var microMovementDirection = 0 // 0 = no movement, -1 = backward, 1 = forward
+    
+    /**
+     * Performs micro-movement to help with failed interactions
+     */
+    private fun performMicroMovement(target: BlockPos) {
+        val currentTime = System.currentTimeMillis()
+        
+        // Don't move too frequently
+        if (currentTime - lastMicroMovement < 1000) {
+            return
+        }
+        
+        // Check if this is the same target that's failing
+        if (lastFailedTarget != target) {
+            lastFailedTarget = target
+            failedAttempts = 1
+            microMovementDirection = -1 // Start with backward movement
+        } else {
+            failedAttempts++
+        }
+        
+        // Give up after too many attempts
+        if (failedAttempts > 6) {
+            println("[AutoFarm] Too many failed attempts for $target, clearing target")
+            currentTarget = null
+            lastFailedTarget = null
+            failedAttempts = 0
+            return
+        }
+        
+        // Calculate movement direction
+        val targetDirection = (target.toCenterPos().subtract(player.pos)).normalize()
+        val movementVector = when (microMovementDirection) {
+            -1 -> {
+                println("[AutoFarm] Micro-movement: stepping backward from $target")
+                targetDirection.multiply(-0.3) // Step back
+            }
+            1 -> {
+                println("[AutoFarm] Micro-movement: stepping forward toward $target")
+                targetDirection.multiply(0.3) // Step forward
+            }
+            else -> Vec3d.ZERO
+        }
+        
+        // Apply movement
+        if (movementVector != Vec3d.ZERO) {
+            val newPos = player.pos.add(movementVector)
+            player.setPosition(newPos.x, player.pos.y, newPos.z)
+            lastMicroMovement = currentTime
+            
+            // Alternate direction for next attempt
+            microMovementDirection = if (microMovementDirection == -1) 1 else -1
+        }
+    }
 
     val repeatable = tickHandler {
         // Handle hopper deposits when we're close to the hopper
@@ -591,6 +666,12 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 handleBoneMealApplication()
             }
             
+            // Debug: Show when we're updating targets
+            if (Math.random() < 0.05) { // 5% chance to avoid spam
+                val targetInfo = currentTarget?.let { "${it.x},${it.y},${it.z}" } ?: "null"
+                println("[AutoFarm] Updating farming targets, currentTarget=$targetInfo")
+            }
+            
             updateTarget()
             
             // Update hopper list for visualization
@@ -617,16 +698,35 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         currentTarget ?: run {
             // Only update walk target if NOT depositing to hopper
             if (!isDepositingToHopper) {
-                autoWalk.updateWalkTarget()
+                val walkUpdated = autoWalk.updateWalkTarget()
+                if (Math.random() < 0.02) { // 2% chance to avoid spam
+                    println("[AutoFarm] No current target, called autoWalk.updateWalkTarget(), result: $walkUpdated")
+                }
+            } else {
+                if (Math.random() < 0.02) {
+                    println("[AutoFarm] Skipping walk update - depositing to hopper")
+                }
             }
             return@tickHandler
         }
 
-        autoWalk.stopWalk() // Stop walking if we found a target close enough to interact with it
+        // Only stop walking if we have a current target that's not null
+        if (currentTarget != null) {
+            autoWalk.stopWalk() // Stop walking if we found a target close enough to interact with it
+            if (Math.random() < 0.05) {
+                val targetInfo = "${currentTarget!!.x},${currentTarget!!.y},${currentTarget!!.z}"
+                println("[AutoFarm] Stopping walk - found interaction target at $targetInfo")
+            }
+        } else {
+            if (Math.random() < 0.02) {
+                println("[AutoFarm] No currentTarget, continuing AutoWalk")
+            }
+        }
 
         val currentRotation = RotationManager.serverRotation
 
-        val rayTraceResult = world.raycast(
+        // Try normal range first
+        var rayTraceResult = world.raycast(
             RaycastContext(
                 player.eyePos,
                 player.eyePos.add(currentRotation.directionVector.multiply(range.toDouble())),
@@ -634,14 +734,34 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 RaycastContext.FluidHandling.NONE,
                 player
             )
-        ) ?: return@tickHandler
-
-        if (rayTraceResult.type != HitResult.Type.BLOCK) {
+        )
+        
+        // If normal range failed but we have a currentTarget, try increased range for cocoa blocks
+        if ((rayTraceResult == null || rayTraceResult.type != HitResult.Type.BLOCK || 
+            rayTraceResult.blockPos != currentTarget) && currentTarget != null) {
+            val targetState = currentTarget!!.getState()
+            if (targetState?.block is CocoaBlock) {
+                println("[AutoFarm] Normal raycast failed for cocoa target, trying with increased range")
+                rayTraceResult = world.raycast(
+                    RaycastContext(
+                        player.eyePos,
+                        player.eyePos.add(currentRotation.directionVector.multiply(range.toDouble() + 0.5)),
+                        RaycastContext.ShapeType.OUTLINE,
+                        RaycastContext.FluidHandling.NONE,
+                        player
+                    )
+                )
+                if (rayTraceResult != null && rayTraceResult.blockPos == currentTarget) {
+                    println("[AutoFarm] Increased range raycast succeeded for cocoa breaking")
+                }
+            }
+        }
+        
+        if (rayTraceResult == null || rayTraceResult.type != HitResult.Type.BLOCK) {
             return@tickHandler
         }
 
         val blockPos = rayTraceResult.blockPos
-
         var state = blockPos.getState() ?: return@tickHandler
         
         
@@ -657,31 +777,148 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
             val direction = rayTraceResult.side
 
+            val previousProgress = interaction.blockBreakingProgress
             if (interaction.updateBlockBreakingProgress(blockPos, direction)) {
                 player.swingHand(Hand.MAIN_HAND)
+                // Reset failed attempts on successful interaction start
+                if (lastFailedTarget == blockPos) {
+                    lastFailedTarget = null
+                    failedAttempts = 0
+                }
+            } else {
+                // Block breaking didn't start - this might be a failed interaction
+                if (previousProgress == 0) {
+                    println("[AutoFarm] Failed to start breaking block at $blockPos")
+                    performMicroMovement(blockPos)
+                }
             }
 
             if (interaction.blockBreakingProgress == -1) {
-                // Only wait if the block is completely broken
+                // Block was completely broken - check if we can replant immediately
+                println("[AutoFarm] Block broken at ${blockPos.x}, ${blockPos.y}, ${blockPos.z}")
+                
+                // Check if this was a cocoa block and we can replant on the same jungle log
+                val underlyingPos = blockPos.offset(rayTraceResult.side.opposite)
+                val underlyingState = underlyingPos.getState()
+                val canReplantCocoa = underlyingState != null && isJungleLog(underlyingState.block) &&
+                    player.inventory.main.any { it.item == Items.COCOA_BEANS }
+                
+                if (canReplantCocoa && AutoPlaceCrops.enabled) {
+                    println("[AutoFarm] Can replant cocoa immediately, keeping jungle log as target")
+                    // Set target to the jungle log for immediate replanting
+                    currentTarget = underlyingPos
+                    autoWalk.stopWalk() // Stop any walking, we have a planting target
+                    waitTicks(1) // Small delay to let block update, then replant
+                } else {
+                    // No immediate replanting possible - look for dropped items
+                    println("[AutoFarm] No immediate replanting, searching for dropped items")
+                    autoWalk.walkTarget = null // Clear current target to find items
+                    currentTarget = null // Clear block target too
+                    
+                    // Immediately force AutoWalk to search for items
+                    val foundItems = autoWalk.updateWalkTarget()
+                    println("[AutoFarm] Forced AutoWalk update after block break, found items: $foundItems")
+                }
+                
                 waitTicks(interactDelay.random())
             }
         } else {
-            val pos = blockPos.offset(rayTraceResult.side).down()
+            // For planting - check if we're targeting a jungle log directly or farmland below
+            val plantingPos = if (isJungleLog(state.block)) {
+                // Direct jungle log targeting for cocoa planting
+                blockPos
+            } else {
+                // Traditional farmland check (below the targeted air block)
+                blockPos.offset(rayTraceResult.side).down()
+            }
+            
+            val plantingState = plantingPos.getState() ?: return@tickHandler
 
-            state = pos.getState() ?: return@tickHandler
-
-            if (isFarmBlockWithAir(state, pos) || isJungleLogWithAirAround(state, pos)) {
+            val canPlant = isFarmBlockWithAir(plantingState, plantingPos) || 
+                          isJungleLogWithAirAround(plantingState, plantingPos)
+            if (canPlant) {
                 val item = when {
-                    state.block is FarmlandBlock -> itemForFarmland
-                    state.block is SoulSandBlock -> itemForSoulSand
-                    isJungleLog(state.block) -> itemForJungleLog
+                    plantingState.block is FarmlandBlock -> itemForFarmland
+                    plantingState.block is SoulSandBlock -> itemForSoulSand
+                    isJungleLog(plantingState.block) -> itemForJungleLog
                     else -> null
                 }
 
                 item ?: return@tickHandler
 
-                SilentHotbar.selectSlotSilently(this, item, AutoPlaceCrops.swapBackDelay.random())
-                doPlacement(rayTraceResult)
+                if (item != null) {
+                    println("[AutoFarm] Selecting cocoa beans from slot for planting")
+                    SilentHotbar.selectSlotSilently(this, item, AutoPlaceCrops.swapBackDelay.random())
+                } else {
+                    println("[AutoFarm] No cocoa beans found in hotbar for planting!")
+                }
+                
+                // For jungle logs (cocoa), we need to click on the side, not use doPlacement
+                if (isJungleLog(plantingState.block)) {
+                    val coords = "${plantingPos.x}, ${plantingPos.y}, ${plantingPos.z}"
+                    println("[AutoFarm] Attempting to plant cocoa on jungle log at $coords")
+                    
+                    // Check if we have cocoa beans selected
+                    val selectedStack = player.mainHandStack
+                    if (selectedStack.item != Items.COCOA_BEANS) {
+                        println("[AutoFarm] Main hand item is ${selectedStack.item}, not cocoa beans!")
+                    } else {
+                        println("[AutoFarm] Cocoa beans selected, proceeding with planting")
+                    }
+                    
+                    // Use right-click interaction for cocoa planting
+                    player.swingHand(Hand.MAIN_HAND)
+                    
+                    // For cocoa planting, create a new raycast if the current one doesn't reach the target
+                    var plantingRayTraceResult = rayTraceResult
+                    if (rayTraceResult.blockPos != plantingPos) {
+                        println("[AutoFarm] Current raycast doesn't reach planting target, trying with increased range")
+                        val increasedRaycast = world.raycast(
+                            RaycastContext(
+                                player.eyePos,
+                                player.eyePos.add(currentRotation.directionVector.multiply(range.toDouble() + 0.5)),
+                                RaycastContext.ShapeType.OUTLINE,
+                                RaycastContext.FluidHandling.NONE,
+                                player
+                            )
+                        )
+                        if (increasedRaycast != null && increasedRaycast.blockPos == plantingPos) {
+                            println("[AutoFarm] Increased range raycast succeeded for cocoa planting")
+                            plantingRayTraceResult = increasedRaycast
+                        }
+                    }
+                    
+                    // Create BlockHitResult for the jungle log side
+                    val jungleLogHitResult = createJungleLogHitResult(plantingPos, plantingRayTraceResult)
+                    if (jungleLogHitResult != null) {
+                        println("[AutoFarm] Created hit result for jungle log side ${jungleLogHitResult.side}")
+                        
+                        val interactionResult = interaction.interactBlock(player, Hand.MAIN_HAND, jungleLogHitResult)
+                        println("[AutoFarm] Interaction result: $interactionResult")
+                        
+                        // Check if planting was successful
+                        if (interactionResult.isAccepted) {
+                            println("[AutoFarm] Planted cocoa on jungle log at $coords")
+                            // Reset failed attempts on successful planting
+                            if (lastFailedTarget == plantingPos) {
+                                lastFailedTarget = null
+                                failedAttempts = 0
+                            }
+                        } else {
+                            println("[AutoFarm] Failed to plant cocoa on jungle log at $coords - trying micro-movement")
+                            performMicroMovement(plantingPos)
+                        }
+                        
+                        // After planting, look for dropped items on next update cycle
+                        waitTicks(2)
+                    } else {
+                        val message = "Failed to create hit result for jungle log at $coords - trying micro-movement"
+                        println("[AutoFarm] $message")
+                        performMicroMovement(plantingPos)
+                    }
+                } else {
+                    doPlacement(rayTraceResult)
+                }
 
                 waitTicks(interactDelay.random())
             }
@@ -689,23 +926,73 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     }
 
     // Searches for any blocks within the radius that need to be destroyed, such as crops.
+    @Suppress("CognitiveComplexMethod", "NestedBlockDepth", "LongMethod")
     private fun updateTargetToBreakable(radius: Float, radiusSquared: Float, eyesPos: Vec3d): Boolean {
         val blocksToBreak = eyesPos.searchBlocksInCuboid(radius) { pos, state ->
             !state.isAir && isTargeted(state, pos) &&
                     getNearestPoint(eyesPos, Box(pos)).squaredDistanceTo(eyesPos) <= radiusSquared
         }.sortedBy { it.first.getCenterDistanceSquared() }
 
+        // Debug: Log how many breakable blocks we found
+        if (blocksToBreak.any()) {
+            val cocoaBlocks = blocksToBreak.count { (_, state) -> state.block is CocoaBlock }
+            if (cocoaBlocks > 0) {
+                val totalBlocks = blocksToBreak.count()
+                println("[AutoFarm] Found $cocoaBlocks cocoa blocks out of $totalBlocks total breakable blocks")
+            }
+        }
+
         for ((pos, state) in blocksToBreak) {
-            val (rotation, _) = raytraceBlock(
+            // Debug: Check if cocoa block and log raytrace attempt
+            if (state.block is CocoaBlock) {
+                println("[AutoFarm] Attempting raytrace for cocoa at $pos, age=${state.get(CocoaBlock.AGE)}")
+            }
+            
+            val raytraceResult = raytraceBlock(
                 player.eyePos,
                 pos,
                 state,
                 range = range.toDouble() - 0.1,
                 wallsRange = wallRange.toDouble() - 0.1
-            ) ?: continue // We don't have a free angle at the block? Well, let me see the next.
+            ) ?: run {
+                // Debug: Log failed raytrace for cocoa blocks
+                if (state.block is CocoaBlock) {
+                    println("[AutoFarm] Failed raytrace for cocoa at $pos - no free angle, trying with increased range")
+                    
+                    // Try with slightly increased range for cocoa blocks
+                    val secondAttempt = raytraceBlock(
+                        player.eyePos,
+                        pos,
+                        state,
+                        range = range.toDouble() + 0.5, // Increased range
+                        wallsRange = wallRange.toDouble() + 0.5 // Increased walls range too
+                    )
+                    
+                    if (secondAttempt != null) {
+                        println("[AutoFarm] Second raytrace attempt succeeded for cocoa at $pos")
+                        return@run secondAttempt
+                    } else {
+                        println("[AutoFarm] Both raytrace attempts failed for cocoa at $pos")
+                        return@run null
+                    }
+                } else {
+                    return@run null
+                }
+            }
+            
+            if (raytraceResult == null) {
+                continue
+            }
+            
+            val (rotation, _) = raytraceResult
 
             // set currentTarget to the new target
             currentTarget = pos
+            // Reset micro-movement counters for new target
+            if (lastFailedTarget != pos) {
+                lastFailedTarget = null
+                failedAttempts = 0
+            }
             // aim at target
             RotationManager.setRotationTarget(
                 rotation,
@@ -721,6 +1008,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
     // Searches for any blocks suitable for placing crops or nether wart on
     // returns ture if it found a target
+    @Suppress("LongMethod", "CognitiveComplexMethod", "NestedBlockDepth")
     private fun updateTargetToPlaceable(radius: Float, radiusSquared: Float, eyesPos: Vec3d): Boolean {
         val hotbarItems = Slots.Hotbar.items
 
@@ -728,27 +1016,113 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         val allowSoulsand = hotbarItems.any { it in filteredSoulsandItems }
         val allowJungleLog = hotbarItems.any { it in filteredJungleLogItems }
 
+        // Debug: Check if we have cocoa beans and if jungle log planting is allowed
+        if (allowJungleLog && hotbarItems.any { it == Items.COCOA_BEANS }) {
+            println("[AutoFarm] Have cocoa beans, allowJungleLog=true, searching for jungle logs")
+        } else if (allowJungleLog) {
+            println("[AutoFarm] allowJungleLog=true but no cocoa beans in hotbar")
+        } else {
+            println("[AutoFarm] allowJungleLog=false, AutoGarden.targetCocoa=${AutoGarden.targetCocoa}")
+        }
+
         if (!allowFarmland && !allowSoulsand && !allowJungleLog) return false
 
         val blocksToPlace =
             eyesPos.searchBlocksInCuboid(radius) { pos, state ->
                 !state.isAir && (
                     isFarmBlockWithAir(state, pos, allowFarmland, allowSoulsand) ||
-                    (allowJungleLog && isJungleLogWithAirAround(state, pos))
+                    (allowJungleLog && isJungleLogWithAirAround(state, pos).also { hasAir ->
+                        if (isJungleLog(state.block) && hasAir) {
+                            println("[AutoFarm] Found jungle log with air at ${pos.x}, ${pos.y}, ${pos.z}")
+                        }
+                    })
                 ) && getNearestPoint(eyesPos, Box(pos)).squaredDistanceTo(eyesPos) <= radiusSquared
             }.map { it.first }.sortedBy { it.getCenterDistanceSquared() }
 
         for (pos in blocksToPlace) {
-            // We can only plant on the upper side
-            val (rotation, _) = raytraceUpperBlockSide(
-                player.eyePos,
-                range = range.toDouble() - 0.1,
-                wallsRange = wallRange.toDouble() - 0.1,
-                pos
-            ) ?: continue // We don't have a free angle at the block? Well, let me see the next.
+            val state = pos.getState() ?: continue
+            
+            // Debug: Show which block we're trying to place on
+            if (isJungleLog(state.block)) {
+                println("[AutoFarm] Targeting jungle log at ${pos.x}, ${pos.y}, ${pos.z} for planting")
+            }
+            
+            val rotation = if (isJungleLog(state.block)) {
+                println("[AutoFarm] Raytracing jungle log at ${pos.x}, ${pos.y}, ${pos.z}")
+                // For cocoa, raytrace to an available side
+                val jungleLogResult = raytraceJungleLogSide(
+                    player.eyePos,
+                    range = range.toDouble() - 0.1,
+                    wallsRange = wallRange.toDouble() - 0.1,
+                    pos
+                ) ?: run {
+                    println("[AutoFarm] Failed to raytrace jungle log at $pos, trying with increased range")
+                    
+                    // Try with increased range for jungle logs
+                    val secondAttempt = raytraceJungleLogSide(
+                        player.eyePos,
+                        range = range.toDouble() + 0.5, // Increased range
+                        wallsRange = wallRange.toDouble() + 0.5, // Increased walls range too
+                        pos
+                    )
+                    
+                    if (secondAttempt != null) {
+                        println("[AutoFarm] Second raytrace attempt succeeded for jungle log at $pos")
+                        secondAttempt
+                    } else {
+                        println("[AutoFarm] Both raytrace attempts failed for jungle log at $pos")
+                        return@run null
+                    }
+                }
+                
+                if (jungleLogResult == null) {
+                    continue
+                }
+                
+                println("[AutoFarm] Successfully raytraced jungle log at ${pos.x}, ${pos.y}, ${pos.z}")
+                jungleLogResult.first
+            } else {
+                // For regular crops, plant on the upper side
+                val upperSideResult = raytraceUpperBlockSide(
+                    player.eyePos,
+                    range = range.toDouble() - 0.1,
+                    wallsRange = wallRange.toDouble() - 0.1,
+                    pos
+                ) ?: run {
+                    // Try with increased range for regular crops too
+                    val secondAttempt = raytraceUpperBlockSide(
+                        player.eyePos,
+                        range = range.toDouble() + 0.5,
+                        wallsRange = wallRange.toDouble() + 0.5,
+                        pos
+                    )
+                    
+                    if (secondAttempt != null) {
+                        secondAttempt
+                    } else {
+                        return@run null
+                    }
+                }
+                
+                if (upperSideResult == null) {
+                    continue
+                }
+                
+                upperSideResult.rotation
+            }
 
+            // Debug: Show successful targeting
+            if (isJungleLog(state.block)) {
+                println("[AutoFarm] Successfully targeted jungle log at ${pos.x}, ${pos.y}, ${pos.z}")
+            }
+            
             // set currentTarget to the new target
             currentTarget = pos
+            // Reset micro-movement counters for new target
+            if (lastFailedTarget != pos) {
+                lastFailedTarget = null
+                failedAttempts = 0
+            }
             // aim at target
             RotationManager.setRotationTarget(
                 rotation,
@@ -765,6 +1139,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     // Finds either a breakable target (such as crops, cactus, etc.)
     // or a placeable target (such as a farmblock or soulsand with air above).
     // It will prefer a breakable target
+    @Suppress("CognitiveComplexMethod", "NestedBlockDepth")
     private fun updateTarget() {
         currentTarget = null
 
@@ -774,11 +1149,41 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
         // Can we find a breakable target?
         if (updateTargetToBreakable(radius, radiusSquared, eyesPos)) {
+            // Debug: Show what type of target was found for breaking
+            currentTarget?.let { target ->
+                val state = target.getState()
+                if (state?.block is CocoaBlock) {
+                    println("[AutoFarm] Found breakable cocoa at ${target.x}, ${target.y}, ${target.z}")
+                }
+            }
             return
+        }
+        
+        // If no standard targets found, try with increased radius for cocoa blocks
+        if (AutoGarden.enabled && AutoGarden.targetCocoa) {
+            val increasedRadius = radius + 0.5f
+            val increasedRadiusSquared = increasedRadius * increasedRadius
+            println("[AutoFarm] No standard targets found, trying increased radius for cocoa: $increasedRadius")
+            if (updateTargetToBreakable(increasedRadius, increasedRadiusSquared, eyesPos)) {
+                currentTarget?.let { target ->
+                    val state = target.getState()
+                    if (state?.block is CocoaBlock) {
+                        println("[AutoFarm] Found cocoa with increased radius at ${target.x}, ${target.y}, ${target.z}")
+                    }
+                }
+                return
+            }
         }
 
         // Can we find a placeable target?
         if (AutoPlaceCrops.enabled && updateTargetToPlaceable(radius, radiusSquared, eyesPos)) {
+            // Debug: Show what type of target was found for placing
+            currentTarget?.let { target ->
+                val state = target.getState()
+                if (state?.block != null && isJungleLog(state.block)) {
+                    println("[AutoFarm] Found jungle log for planting at ${target.x}, ${target.y}, ${target.z}")
+                }
+            }
             return
         }
     }
@@ -999,7 +1404,106 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
      * checks if the block is a jungle log
      */
     private fun isJungleLog(block: net.minecraft.block.Block): Boolean {
-        return block == Blocks.JUNGLE_LOG || block == Blocks.STRIPPED_JUNGLE_LOG
+        return block == Blocks.JUNGLE_LOG || block == Blocks.STRIPPED_JUNGLE_LOG ||
+               block == Blocks.JUNGLE_WOOD || block == Blocks.STRIPPED_JUNGLE_WOOD
+    }
+
+    /**
+     * Raytrace to a horizontal side of a jungle log block for cocoa planting
+     */
+    @Suppress("UnusedParameter")
+    private fun raytraceJungleLogSide(
+        eyePos: Vec3d,
+        range: Double,
+        wallsRange: Double,
+        pos: BlockPos
+    ): Pair<Rotation, Vec3d>? {
+        val directions = arrayOf(
+            net.minecraft.util.math.Direction.NORTH,
+            net.minecraft.util.math.Direction.SOUTH,
+            net.minecraft.util.math.Direction.EAST,
+            net.minecraft.util.math.Direction.WEST
+        )
+        
+        // Try each horizontal direction to find an available side
+        for (direction in directions) {
+            val adjacentPos = pos.offset(direction)
+            val adjacentState = adjacentPos.getState()
+            
+            // Check if this side has air for cocoa placement
+            if (adjacentState?.isAir == true) {
+                // Calculate target point on the side of the jungle log
+                val targetVec = pos.toCenterPos().add(
+                    direction.offsetX * 0.5,
+                    0.0,  // Center height
+                    direction.offsetZ * 0.5
+                )
+                
+                // Create rotation to look at this side
+                val rotation = getRotationTo(eyePos, targetVec)
+                
+                // Check if we can reach this side
+                val distance = eyePos.distanceTo(targetVec)
+                if (distance <= range) {
+                    return Pair(rotation, targetVec)
+                }
+            }
+        }
+        
+        return null
+    }
+
+    /**
+     * Calculate rotation to look at a target position
+     */
+    private fun getRotationTo(from: Vec3d, to: Vec3d): Rotation {
+        val diff = to.subtract(from)
+        val distance = kotlin.math.sqrt(diff.x * diff.x + diff.z * diff.z)
+        
+        val yaw = (kotlin.math.atan2(diff.z, diff.x) * 180.0 / kotlin.math.PI - 90.0).toFloat()
+        val pitch = (-kotlin.math.atan2(diff.y, distance) * 180.0 / kotlin.math.PI).toFloat()
+        
+        return Rotation(yaw, pitch)
+    }
+
+    /**
+     * Create BlockHitResult for clicking on jungle log side for cocoa planting
+     */
+    @Suppress("UnusedParameter")
+    private fun createJungleLogHitResult(
+        jungleLogPos: BlockPos, 
+        rayTraceResult: net.minecraft.util.hit.BlockHitResult
+    ): net.minecraft.util.hit.BlockHitResult? {
+        val directions = arrayOf(
+            net.minecraft.util.math.Direction.NORTH,
+            net.minecraft.util.math.Direction.SOUTH,
+            net.minecraft.util.math.Direction.EAST,
+            net.minecraft.util.math.Direction.WEST
+        )
+        
+        // Find an available side with air
+        for (direction in directions) {
+            val adjacentPos = jungleLogPos.offset(direction)
+            val adjacentState = adjacentPos.getState()
+            
+            if (adjacentState?.isAir == true) {
+                // Create hit result for this side of the jungle log
+                val hitPos = jungleLogPos.toCenterPos().add(
+                    direction.offsetX * 0.5,
+                    0.0,
+                    direction.offsetZ * 0.5
+                )
+                
+                return net.minecraft.util.hit.BlockHitResult(
+                    hitPos,
+                    direction,
+                    jungleLogPos,
+                    false
+                )
+            }
+        }
+        
+        return null
     }
 
     private fun isFarmBlock(state: BlockState, allowFarmland: Boolean, allowSoulsand: Boolean): Boolean {
@@ -1021,6 +1525,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     override fun disable() {
         ChunkScanner.unsubscribe(AutoFarmBlockTracker)
         currentTarget = null
+        // Reset micro-movement state
+        lastFailedTarget = null
+        failedAttempts = 0
+        microMovementDirection = 0
     }
 
 }

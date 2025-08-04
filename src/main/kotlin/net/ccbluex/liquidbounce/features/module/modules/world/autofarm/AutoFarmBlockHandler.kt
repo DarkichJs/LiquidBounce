@@ -23,12 +23,14 @@ import net.ccbluex.liquidbounce.utils.block.getState
 import net.minecraft.block.BlockState
 import net.minecraft.block.FarmlandBlock
 import net.minecraft.block.SoulSandBlock
+import net.minecraft.block.Blocks
 import net.minecraft.util.math.BlockPos
 
 enum class AutoFarmTrackedStates {
     Destroy,
     Farmland,
-    Soulsand
+    Soulsand,
+    JungleLog
 }
 
 object AutoFarmBlockTracker : AbstractBlockLocationTracker.State2BlockPos<AutoFarmTrackedStates>() {
@@ -46,6 +48,11 @@ object AutoFarmBlockTracker : AbstractBlockLocationTracker.State2BlockPos<AutoFa
         when (blockBellow) {
             is FarmlandBlock -> handlePlaceableBlock(pos, state, AutoFarmTrackedStates.Farmland)
             is SoulSandBlock -> handlePlaceableBlock(pos, state, AutoFarmTrackedStates.Soulsand)
+        }
+        
+        // Check for jungle logs that can have cocoa planted on them
+        if (isJungleLog(state.block) && hasAirAroundForCocoa(pos)) {
+            return AutoFarmTrackedStates.JungleLog
         }
 
         val block = state.block
@@ -69,6 +76,26 @@ object AutoFarmBlockTracker : AbstractBlockLocationTracker.State2BlockPos<AutoFa
         } else {
             // If there is no air above, we want to remove it
             untrack(targetBlockPos)
+        }
+    }
+    
+    private fun isJungleLog(block: net.minecraft.block.Block): Boolean {
+        return block == Blocks.JUNGLE_LOG || block == Blocks.STRIPPED_JUNGLE_LOG ||
+               block == Blocks.JUNGLE_WOOD || block == Blocks.STRIPPED_JUNGLE_WOOD
+    }
+    
+    private fun hasAirAroundForCocoa(pos: BlockPos): Boolean {
+        val directions = arrayOf(
+            net.minecraft.util.math.Direction.NORTH,
+            net.minecraft.util.math.Direction.SOUTH,
+            net.minecraft.util.math.Direction.EAST,
+            net.minecraft.util.math.Direction.WEST
+        )
+        
+        return directions.any { direction ->
+            val adjacentPos = pos.offset(direction)
+            val adjacentState = adjacentPos.getState()
+            adjacentState?.isAir == true
         }
     }
 }
