@@ -568,10 +568,6 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             return
         }
         
-        // Check if target is cocoa beans for jumping behavior
-        val targetState = target.getState()
-        val isCocoaTarget = targetState != null && targetState.block is CocoaBlock
-        
         // Calculate movement direction
         val targetDirection = (target.toCenterPos().subtract(player.pos)).normalize()
         val movementVector = when (microMovementDirection) {
@@ -591,12 +587,6 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             val newPos = player.pos.add(movementVector)
             player.setPosition(newPos.x, player.pos.y, newPos.z)
             lastMicroMovement = currentTime
-            
-            // Jump only for cocoa beans, regular movement for other crops
-            if (isCocoaTarget) {
-                println("[AutoFarm] Jumping to help with cocoa bean interaction")
-                player.jump()
-            }
             
             // Alternate direction for next attempt
             microMovementDirection = if (microMovementDirection == -1) 1 else -1
