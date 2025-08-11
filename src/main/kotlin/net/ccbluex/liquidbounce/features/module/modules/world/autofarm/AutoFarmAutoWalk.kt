@@ -66,7 +66,6 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
         var cocoaRangeSquared: Float = cocoaRange.sq()
     }
 
-    private val autoJump by boolean("AutoJump", true)
 
     init {
         tree(toItems)
@@ -431,18 +430,7 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
             event.jump = true
         }
 
-        // Auto jump when enabled - only when actually colliding
-        if (autoJump && player.horizontalCollision) {
-            event.jump = true
-        }
-        
-        // Always auto jump when colliding horizontally and not moving
-        if (player.horizontalCollision && player.velocity.x.let { kotlin.math.abs(it) } < 0.1 && 
-            player.velocity.z.let { kotlin.math.abs(it) } < 0.1) {
-            event.jump = true
-        }
-        
-        // Smart jumping logic for multi-level cocoa farms
+        // Smart movement logic for descending to targets
         val target = walkTarget!!
         val playerPos = player.pos
         val heightDiff = target.y - playerPos.y
@@ -459,122 +447,11 @@ object AutoFarmAutoWalk : ToggleableConfigurable(ModuleAutoFarm, "AutoWalk", fal
                 val horizontalDist = kotlin.math.sqrt((target.x - playerPos.x) * (target.x - playerPos.x) + 
                                                     (target.z - playerPos.z) * (target.z - playerPos.z))
                 
-                // Start sneaking when we get close horizontally, but not too far away
+                // Start sneaking when we get close horizontally
                 if (horizontalDist < 1.2 && distance < 2.0) {
                     event.sneak = true
-                    if (Math.random() < 0.1) {
-                        val msg = "Sneaking to descend: hDist=${horizontalDist.toInt()}, vDist=${(-heightDiff).toInt()}"
-                        println("[AutoWalk] $msg")
-                    }
-                    
-                    // Don't jump when trying to descend, but allow continued movement
-                    event.jump = false
-                    // Don't return early - let horizontal movement continue
                 }
             }
-        }
-        
-        // Check if we're trying to reach an item that might be on a block
-        val targetIsItem = world.entities.any { entity ->
-            entity is ItemEntity && entity.pos.squaredDistanceTo(target) < 1.0
-        }
-        
-        // Check if target is a block we need to break (don't jump ON blocks we want to break)
-        @Suppress("SwallowedException")
-        val targetIsBreakableBlock = try {
-            val targetBlockPos = net.minecraft.util.math.BlockPos(target.x.toInt(), target.y.toInt(), target.z.toInt())
-            val state = world.getBlockState(targetBlockPos)
-            ModuleAutoFarm.isTargeted(state, targetBlockPos)
-        } catch (e: Exception) {
-            false
-        }
-        
-        // Smart jumping logic for multi-level cocoa farms  
-        val playerVel = player.velocity
-        val isMoving = kotlin.math.abs(playerVel.x) > 0.03 || kotlin.math.abs(playerVel.z) > 0.03
-        val direction = target.subtract(playerPos).normalize()
-        val movingTowards = (playerVel.x * direction.x + playerVel.z * direction.z) > 0.03
-        
-        // Calculate how many blocks need to be jumped to reach target
-        val blocksToJump = kotlin.math.ceil(heightDiff).toInt()
-        
-        // For targets 3+ blocks high, start jumping 2 blocks before target
-        val jumpStartDistance = when {
-            heightDiff >= 3.0 -> 2.5  // Start jumping 2+ blocks before
-            heightDiff >= 2.0 -> 1.8  // Start jumping ~2 blocks before  
-            heightDiff >= 1.0 -> 1.2  // Start jumping ~1 block before
-            else -> 0.8              // Normal close jumping
-        }
-        
-        val needsJump = when {
-            // Never jump if target is a breakable block (we want to break it, not jump on it)
-            targetIsBreakableBlock -> {
-                if (Math.random() < 0.02) {
-                    println("[AutoWalk] Not jumping - target is breakable block")
-                }
-                false
-            }
-            
-            // Special logic for high elevated items (3+ blocks) - start jumping early
-            targetIsItem && heightDiff >= 3.0 && distance < (jumpStartDistance + 3.0) && 
-            (isMoving || movingTowards) -> {
-                if (Math.random() < 0.1) {
-                    val msg = "Early jumping: height=${heightDiff.toInt()}, dist=${distance.toInt()}"
-                    println("[AutoWalk] $msg")
-                }
-                true
-            }
-            
-            // Regular elevated items - start jumping at calculated distance
-            targetIsItem && heightDiff >= 1.0 && distance < (jumpStartDistance + 1.0) && 
-            (isMoving || movingTowards) -> {
-                if (Math.random() < 0.05) {
-                    val msg = "Elevated jump: height=${heightDiff.toInt()}, start=${jumpStartDistance.toInt()}"
-                    println("[AutoWalk] $msg")
-                }
-                true
-            }
-            
-            // Small elevation items - normal jumping
-            targetIsItem && distance < 6.0 && heightDiff > 0.3 && (isMoving || movingTowards) -> {
-                if (Math.random() < 0.05) {
-                    println("[AutoWalk] Normal jumping to elevated item, height=${heightDiff.toInt()}")
-                }
-                true
-            }
-            
-            // For planting blocks - only jump if elevated and not breakable
-            !targetIsItem && !targetIsBreakableBlock && heightDiff >= 1.0 && 
-            distance < (jumpStartDistance + 2.0) && (isMoving || movingTowards) -> {
-                if (Math.random() < 0.03) {
-                    val msg = "Jumping to planting block: height=${heightDiff.toInt()}"
-                    println("[AutoWalk] $msg")
-                }
-                true
-            }
-            
-            // Jump when there's any horizontal collision and target is higher (but not breakable)
-            !targetIsBreakableBlock && player.horizontalCollision && distance < 8.0 && heightDiff > 0.2 -> {
-                if (Math.random() < 0.05) {
-                    println("[AutoWalk] Collision jumping, trying to reach higher target")
-                }
-                true
-            }
-            
-            // Jump when moving slowly but target is higher (stuck on stairs) - but not for breakable blocks
-            !targetIsBreakableBlock && distance < 6.0 && heightDiff > 0.3 && isMoving && 
-            kotlin.math.abs(playerVel.x) < 0.15 && kotlin.math.abs(playerVel.z) < 0.15 -> {
-                if (Math.random() < 0.05) {
-                    println("[AutoWalk] Slow movement jumping - likely stuck on stairs")
-                }
-                true
-            }
-            
-            else -> false
-        }
-        
-        if (needsJump) {
-            event.jump = true
         }
     }
 }
