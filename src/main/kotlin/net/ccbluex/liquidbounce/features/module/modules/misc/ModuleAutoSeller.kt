@@ -504,15 +504,15 @@ object ModuleAutoSeller : ClientModule("AutoSeller", Category.MISC) {
             }.start()
         }
         
-        // Check for AFK mode error - activate AutoFarm for 30 seconds
+        // Check for AFK mode error - activate AutoFarm for 10 seconds
         else if (message.contains("Данная команда недоступна в режиме AFK")) {
             if (debug) {
-                println("[AutoSeller] AFK mode detected, activating AutoFarm for 30 seconds")
+                println("[AutoSeller] AFK mode detected, activating AutoFarm for 10 seconds")
             }
             waitingForResponse = false
             waitingStartTime = 0L
             
-            // Activate AutoFarm for 30 seconds to exit AFK mode
+            // Activate AutoFarm for 10 seconds to exit AFK mode
             Thread {
                 try {
                     // Enable AutoFarm if it's not already enabled
@@ -523,11 +523,11 @@ object ModuleAutoSeller : ClientModule("AutoSeller", Category.MISC) {
                         }
                     }
                     
-                    // Wait 30 seconds
-                    Thread.sleep(30000)
+                    // Wait 10 seconds
+                    Thread.sleep(10000)
                     
                     if (debug) {
-                        println("[AutoSeller] 30 seconds passed, will retry selling")
+                        println("[AutoSeller] 10 seconds passed, will retry selling")
                     }
                     
                 } catch (e: Exception) {
