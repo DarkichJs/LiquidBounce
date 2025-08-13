@@ -48,6 +48,7 @@ import net.ccbluex.liquidbounce.features.command.commands.module.CommandAutoAcco
 import net.ccbluex.liquidbounce.features.command.commands.module.CommandAutoDisable
 import net.ccbluex.liquidbounce.features.command.commands.module.CommandInvsee
 import net.ccbluex.liquidbounce.features.command.commands.module.CommandXRay
+import net.ccbluex.liquidbounce.features.command.commands.module.CommandPointWalk
 import net.ccbluex.liquidbounce.features.command.commands.module.teleport.CommandPlayerTeleport
 import net.ccbluex.liquidbounce.features.command.commands.module.teleport.CommandTeleport
 import net.ccbluex.liquidbounce.features.command.commands.module.teleport.CommandVClip
@@ -309,6 +310,7 @@ object CommandManager : Iterable<Command> by commands {
             CommandModels,
             CommandTranslate,
             CommandAutoTranslate,
+            CommandPointWalk,
         )
 
         commands.forEach {

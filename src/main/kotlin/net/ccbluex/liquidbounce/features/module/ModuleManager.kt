@@ -61,6 +61,7 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.spider.ModuleSp
 import net.ccbluex.liquidbounce.features.module.modules.movement.step.ModuleReverseStep
 import net.ccbluex.liquidbounce.features.module.modules.movement.step.ModuleStep
 import net.ccbluex.liquidbounce.features.module.modules.movement.terrainspeed.ModuleTerrainSpeed
+import net.ccbluex.liquidbounce.features.module.modules.movement.ModulePointWalk
 import net.ccbluex.liquidbounce.features.module.modules.player.*
 import net.ccbluex.liquidbounce.features.module.modules.player.antivoid.ModuleAntiVoid
 import net.ccbluex.liquidbounce.features.module.modules.player.autobuff.ModuleAutoBuff
@@ -310,6 +311,7 @@ object ModuleManager : EventListener, Iterable<ClientModule> by modules {
             ModuleSpider,
             ModuleTargetStrafe,
             ModuleAnchor,
+            ModulePointWalk,
 
             // Player
             ModuleAntiVoid,
