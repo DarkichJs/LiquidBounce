@@ -262,6 +262,7 @@ object ModuleManager : EventListener, Iterable<ClientModule> by modules {
             ModuleSpammer,
             ModuleAutoAccount,
             ModuleAutoSeller,
+            ModuleAutoBuyer,
         ModuleClanInvest,
             ModuleTeams,
             ModuleElytraSwap,

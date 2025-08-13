@@ -47,7 +47,7 @@ import net.ccbluex.liquidbounce.utils.kotlin.Priority
 import net.ccbluex.liquidbounce.utils.movement.DirectionalInput
 import net.minecraft.block.*
 import net.minecraft.client.gui.screen.ingame.HandledScreen
-import net.minecraft.enchantment.Enchantments 
+import net.minecraft.enchantment.Enchantments
 import net.minecraft.entity.ItemEntity
 import net.minecraft.item.Items
 import net.minecraft.screen.ScreenHandler
@@ -84,7 +84,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     }
 
     private val fortune by boolean("UseFortune", true)
-    
+
     internal object AutoChest : ToggleableConfigurable(this, "AutoChest", true) {
         val hopperRange by float("HopperRange", 6f, 2f..16f)
         val keepSeeds by int("KeepSeeds", 32, 1..64)
@@ -96,11 +96,11 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         val boneMealDelay by int("BoneMealDelay", 2000, 500..5000)
         val resetInterval by int("ResetInterval", 30000, 10000..120000)
     }
-    
-    
+
+
     internal object CropFilter : ToggleableConfigurable(this, "CropFilter", false) {
         val wheat by boolean("Wheat", true)
-        val carrot by boolean("Carrot", true) 
+        val carrot by boolean("Carrot", true)
         val potato by boolean("Potato", true)
         val beetroot by boolean("Beetroot", true)
         val netherWart by boolean("NetherWart", true)
@@ -112,7 +112,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         val bamboo by boolean("Bamboo", true)
         val cocoa by boolean("Cocoa", true)
     }
-    
+
     internal object AutoGarden : ToggleableConfigurable(this, "AutoGarden", false) {
         val targetWheat by boolean("TargetWheat", true)
         val targetCarrot by boolean("TargetCarrot", true)
@@ -125,7 +125,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     }
 
     private val autoWalk = tree(AutoFarmAutoWalk)
-    
+
     // Hopper management variables
     internal var hopperTarget: BlockPos? = null
     private var isDepositingToHopper = false
@@ -133,19 +133,19 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     private var blockedHoppers: MutableSet<BlockPos> = mutableSetOf()
     private var lastDropAttemptTime = 0L
     private var failedDropCount = 0
-    
+
     // Bone meal management variables
     private var lastBoneMealTime = 0L
     private var boneMealedPositions = mutableSetOf<BlockPos>()
     private var lastBoneMealResetTime = 0L
-    
+
 
     init {
         tree(AutoPlaceCrops)
         tree(AutoFarmVisualizer)
         tree(AutoChest)
         tree(AutoBoneMeal)
-        tree(CropFilter) 
+        tree(CropFilter)
         tree(AutoGarden)
     }
 
@@ -154,7 +154,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     val itemsForFarmland = arrayOf(Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.CARROT, Items.POTATO)
     val itemsForSoulsand = arrayOf(Items.NETHER_WART)
     val itemsForJungleLogs = arrayOf(Items.COCOA_BEANS)
-    
+
     internal val filteredFarmlandItems: Array<net.minecraft.item.Item>
         get() = when {
             AutoGarden.enabled -> {
@@ -175,7 +175,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             }
             else -> itemsForFarmland
         }
-    
+
     internal val filteredSoulsandItems: Array<net.minecraft.item.Item>
         get() = when {
             AutoGarden.enabled -> if (AutoGarden.targetNetherWart) itemsForSoulsand else emptyArray()
@@ -210,7 +210,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 println("[AutoFarm] Looking for jungle log items: $items, found slot: $slot")
             }
         }
-    
+
     // Hopper management functions
     @Suppress("CognitiveComplexMethod", "NestedBlockDepth")
     private fun findNearestHopper(): BlockPos? {
@@ -218,31 +218,31 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             foundHoppers = emptyList()
             return null
         }
-        
+
         val hopperRange = AutoChest.hopperRange.toInt()
         val rangeSquared = (AutoChest.hopperRange * AutoChest.hopperRange).toDouble()
         val playerPos = player.blockPos
-        
+
         // Search in a cube around player
         val hoppersInRange = mutableListOf<BlockPos>()
         var blocksChecked = 0
         var hoppersFound = 0
-        
+
         for (x in -hopperRange..hopperRange) {
             for (y in -hopperRange..hopperRange) {
                 for (z in -hopperRange..hopperRange) {
                     val pos = playerPos.add(x, y, z)
                     val state = pos.getState()
                     blocksChecked++
-                    
+
                     if (state != null) {
                         val block = state.block
                         val isHopper = block == Blocks.HOPPER
-                        
+
                         if (isHopper) {
                             hoppersFound++
                             val distance = player.squaredDistanceTo(pos.toCenterPos())
-                            
+
                             if (distance <= rangeSquared) {
                                 hoppersInRange.add(pos)
                             }
@@ -251,26 +251,26 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 }
             }
         }
-        
+
         // Store for visualization
         foundHoppers = hoppersInRange.toList()
-        
+
         // Debug info - very rarely to avoid spam
         if (Math.random() < 0.005) { // 0.5% chance to avoid spam
-            notification("Hopper Search", 
-                "Found ${hoppersInRange.size} hoppers in range", 
+            notification("Hopper Search",
+                "Found ${hoppersInRange.size} hoppers in range",
                 NotificationEvent.Severity.INFO)
         }
-        
+
         // Filter out blocked hoppers and return the nearest available one
         val availableHoppers = hoppersInRange.filter { it !in blockedHoppers }
-        
+
         return if (availableHoppers.isNotEmpty()) {
             availableHoppers.minByOrNull { player.squaredDistanceTo(it.toCenterPos()) }
         } else {
             // If all hoppers are blocked, clear the blocked list and try again
             if (hoppersInRange.isNotEmpty()) {
-                notification("Hopper Reset", 
+                notification("Hopper Reset",
                     "All hoppers were blocked, clearing blocklist", NotificationEvent.Severity.INFO)
                 blockedHoppers.clear()
                 hoppersInRange.minByOrNull { player.squaredDistanceTo(it.toCenterPos()) }
@@ -279,26 +279,26 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             }
         }
     }
-    
+
     private fun shouldDepositToHopper(): Boolean {
         if (!AutoChest.enabled || isDepositingToHopper) return false
-        
+
         val inventoryFull = !hasInventorySpace()
-        
+
         // Always deposit if inventory is full
         if (inventoryFull) {
             return true
         }
-        
+
         // Check if we have too many items to deposit
         val inventory = player.inventory
         var totalSeeds = 0
         var hasExcessLoot = false
-        
+
         for (slot in 0 until inventory.main.size) {
             val stack = inventory.main[slot]
             if (stack.isEmpty) continue
-            
+
             when (stack.item) {
                 in filteredFarmlandItems, in filteredSoulsandItems -> {
                     totalSeeds += stack.count
@@ -309,48 +309,48 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 }
             }
         }
-        
+
         val shouldDeposit = hasExcessLoot || totalSeeds > AutoChest.keepSeeds
-        
+
         return shouldDeposit
     }
-    
+
     @Suppress("CognitiveComplexMethod", "NestedBlockDepth")
     private fun getItemsToDeposit(): List<Pair<Int, Int>> {
         val itemsToDeposit = mutableListOf<Pair<Int, Int>>()
         val inventory = player.inventory ?: return emptyList()
         if (inventory.main == null) return emptyList()
-        
+
         val isInventoryFull = !hasInventorySpace()
         var seedsKept = 0
         val maxSeedsToKeep = AutoChest.keepSeeds
-        
+
         // Check inventory status without notification spam
-        
+
         // Smart logic: deposit crops, manage seeds properly, protect tools
         for (slot in 0 until inventory.main.size) {
             val stack = inventory.main[slot]
             if (stack.isEmpty) continue
-            
+
             // Skip tools and important items
             if (isImportantItem(stack)) {
                 continue // Never drop tools, weapons, armor, etc.
             }
-            
+
             when {
                 // Always deposit harvested crops (food items)
-                stack.item in listOf(Items.WHEAT, Items.CARROT, Items.POTATO, 
+                stack.item in listOf(Items.WHEAT, Items.CARROT, Items.POTATO,
                     Items.POISONOUS_POTATO, Items.BEETROOT, Items.NETHER_WART,
                     Items.PUMPKIN, Items.MELON_SLICE, Items.SUGAR_CANE, Items.CACTUS,
                     Items.KELP, Items.BAMBOO, Items.COCOA_BEANS) -> {
                     itemsToDeposit.add(slot to stack.count)
                     // Will deposit crop - no notification needed
                 }
-                
+
                 // Handle seeds - keep exact amount specified in settings
                 stack.item in filteredFarmlandItems || stack.item in filteredSoulsandItems -> {
                     val canKeep = maxSeedsToKeep - seedsKept
-                    
+
                     if (canKeep <= 0) {
                         // We already have enough seeds, drop entire stack
                         itemsToDeposit.add(slot to stack.count)
@@ -367,7 +367,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                         // Keeping needed seeds - no notification needed
                     }
                 }
-                
+
                 // If inventory is full, deposit other safe items
                 isInventoryFull -> {
                     // Only deposit non-essential items when inventory is full
@@ -378,40 +378,40 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 }
             }
         }
-        
+
         // Return items to deposit without notification spam
-        
+
         return itemsToDeposit
     }
-    
+
     private fun isImportantItem(stack: net.minecraft.item.ItemStack): Boolean {
         val item = stack.item
-        
+
         // Check if it's a tool (has durability and is meant for breaking/mining)
         if (stack.isDamageable && stack.maxDamage > 0) {
             val itemName = item.name.string.lowercase()
-            
+
             // Check for tools
-            val isTools = itemName.contains("sword") || itemName.contains("axe") || 
+            val isTools = itemName.contains("sword") || itemName.contains("axe") ||
                          itemName.contains("pickaxe") || itemName.contains("shovel") ||
                          itemName.contains("hoe")
-            
+
             // Check for armor
             val isArmor = itemName.contains("helmet") || itemName.contains("chestplate") ||
                          itemName.contains("leggings") || itemName.contains("boots")
-            
+
             // Check for weapons
             val isWeapons = itemName.contains("bow") || itemName.contains("crossbow") ||
                            itemName.contains("trident")
-            
+
             // Check for utility items
             val isUtility = itemName.contains("shears") || itemName.contains("flint_and_steel")
-            
+
             if (isTools || isArmor || isWeapons || isUtility) {
                 return true
             }
         }
-        
+
         // Check for specific important items
         return when (item) {
             Items.DIAMOND, Items.EMERALD, Items.GOLD_INGOT, Items.IRON_INGOT,
@@ -421,85 +421,85 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> false
         }
     }
-    
+
     private fun isEssentialItem(stack: net.minecraft.item.ItemStack): Boolean {
         // Essential items that should never be dropped even when inventory is full
-        return isImportantItem(stack) || 
-               stack.item in filteredFarmlandItems || 
+        return isImportantItem(stack) ||
+               stack.item in filteredFarmlandItems ||
                stack.item in filteredSoulsandItems
     }
-    
+
     @Suppress("CognitiveComplexMethod", "NestedBlockDepth", "LongMethod")
     private fun handleHopperDeposit() {
         // Function called - no need for notification
-        
+
         if (!AutoChest.enabled || hopperTarget == null) {
             return
         }
-        
+
         // Safety checks to prevent null pointer exceptions
         if (player.inventory == null || player.inventory.main == null) {
             return
         }
-        
+
         val hopperPos = hopperTarget!!
         val distance = player.squaredDistanceTo(hopperPos.toCenterPos())
-        
+
         // Check if we're close enough to the hopper (within 1.5 blocks)
         if (distance > 2.25) {
             return
         }
-        
+
         val itemsToDeposit = getItemsToDeposit()
         // Check items to deposit without spamming notifications
-        
+
         if (itemsToDeposit.isEmpty()) {
             // Finished depositing - resume farming
             isDepositingToHopper = false
             hopperTarget = null
             currentTarget = null
             failedDropCount = 0
-            
+
             // Clear blocked hoppers after successful completion
             if (blockedHoppers.isNotEmpty()) {
                 blockedHoppers.clear()
-                notification("Hopper Reset", 
+                notification("Hopper Reset",
                     "Cleared blocked hoppers after successful deposit", NotificationEvent.Severity.INFO)
             }
-            
+
             notification("Hopper Done", "Finished depositing - resuming farming", NotificationEvent.Severity.SUCCESS)
             return
         }
-        
+
         // Look down at the hopper when dropping items
         val downwardRotation = Rotation(
             player.yaw, // Keep current yaw (horizontal direction)
             90f // Look straight down (pitch = 90 degrees)
         )
-        
+
         RotationManager.setRotationTarget(
             downwardRotation,
             configurable = rotations,
             priority = Priority.IMPORTANT_FOR_USAGE_1,
             provider = this@ModuleAutoFarm
         )
-        
+
         // Add anti-kick protection - configurable delay between drops
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastDropAttemptTime < AutoChest.dropDelay) {
             return
         }
-        
+
         // Drop items one by one (process one item per call to avoid issues)
         for ((slot, _) in itemsToDeposit.take(1)) { // Process one slot per tick
             val stack = player.inventory.main[slot]
-            
+
             if (stack.isEmpty) {
                 continue
             }
-            
+
             // Dropping item - no notification spam needed
-            
+
             // Drop from any inventory slot - but only 1 item at a time to avoid kick
             val itemStack = player.inventory.main[slot]
             if (!itemStack.isEmpty) {
@@ -507,49 +507,49 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     // Hotbar slots (0-8) - use selected slot method for single item
                     val originalSlot = player.inventory.selectedSlot
                     player.inventory.selectedSlot = slot
-                    
+
                     // Always drop only 1 item at a time
                     player.dropSelectedItem(false) // Drop single item only
-                    
+
                     // Restore original selected slot
                     player.inventory.selectedSlot = originalSlot
                 } else {
                     // Main inventory slots (9-35) - use inventory manipulation for single item
                     val stackToDrop = itemStack.copy()
                     stackToDrop.count = 1 // Always drop only 1 item
-                    
+
                     // Remove 1 item from inventory
                     if (itemStack.count == 1) {
                         player.inventory.removeStack(slot)
                     } else {
                         player.inventory.main[slot] = itemStack.copyWithCount(itemStack.count - 1)
                     }
-                    
+
                     // Drop single item
                     player.dropItem(stackToDrop, true)
                 }
-                
+
                 // Update last drop time after successful drop
                 lastDropAttemptTime = currentTime
                 break // Only drop one item per call to avoid kick
             }
-            
+
             break // Only drop one item per call
         }
     }
 
     var currentTarget: BlockPos? = null
-    
+
     // Walk target stability variables
     private var lastWalkTargetUpdate = 0L
     private const val WALK_TARGET_UPDATE_COOLDOWN = 500L // 0.5 second cooldown
-    
-    
-    
-    
+
+
+
+
 
     val repeatable = tickHandler {
-        
+
         // Handle hopper deposits when we're close to the hopper
         if (isDepositingToHopper) {
             handleHopperDeposit()
@@ -560,39 +560,39 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         if (ModuleBlink.running) {
             return@tickHandler
         }
-        
+
         // Pause AutoFarm when AutoSeller is actively selling
         if (ModuleAutoSeller.enabled && ModuleAutoSeller.isActivelySelling) {
             return@tickHandler
         }
-        
+
 
         // PRIORITY 1: Handle hopper deposits if AutoChest is enabled
         if (AutoChest.enabled) {
             val shouldDeposit = shouldDepositToHopper()
             val inventoryFull = !hasInventorySpace()
             val needsDeposit = shouldDeposit || inventoryFull
-            
+
             // Remove frequent debug info to avoid notification spam
-            
+
             if (needsDeposit) {
                 hopperTarget = findNearestHopper()
                 if (hopperTarget != null) {
                     isDepositingToHopper = true
                     currentTarget = hopperTarget
                     autoWalk.updateWalkTarget()
-                    
+
                     // Only show when first starting to go to hopper
-                    notification("Going to Hopper", 
-                        "Target hopper at ${hopperTarget!!.x}, ${hopperTarget!!.y}, ${hopperTarget!!.z}", 
+                    notification("Going to Hopper",
+                        "Target hopper at ${hopperTarget!!.x}, ${hopperTarget!!.y}, ${hopperTarget!!.z}",
                         NotificationEvent.Severity.SUCCESS)
-                    
+
                     return@tickHandler
                 } else {
                     notification("Inventory Full", "No hopper found to deposit items", NotificationEvent.Severity.INFO)
                     // If inventory is full and no hopper found, disable if setting is enabled
                     if (inventoryFull && disableOnFullInventory) {
-                        notification("Inventory is Full", 
+                        notification("Inventory is Full",
                             "AutoFarm has been disabled", NotificationEvent.Severity.ERROR)
                         disable()
                         enabled = false
@@ -610,7 +610,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 foundHoppers = emptyList()
                 blockedHoppers.clear()
             }
-            
+
             val inventoryFull = !hasInventorySpace()
             if (inventoryFull && disableOnFullInventory) {
                 notification("Inventory is Full", "AutoFarm has been disabled", NotificationEvent.Severity.ERROR)
@@ -627,15 +627,15 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             if (AutoBoneMeal.enabled) {
                 handleBoneMealApplication()
             }
-            
+
             // Debug: Show when we're updating targets
             if (Math.random() < 0.05) { // 5% chance to avoid spam
                 val targetInfo = currentTarget?.let { "${it.x},${it.y},${it.z}" } ?: "null"
                 println("[AutoFarm] Updating farming targets, currentTarget=$targetInfo")
             }
-            
+
             updateTarget()
-            
+
             // Update hopper list for visualization
             if (AutoChest.enabled) {
                 val nearestHopper = findNearestHopper()
@@ -649,13 +649,13 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             if (AutoChest.enabled) {
                 findNearestHopper()
             }
-            
+
             // Remove frequent debug to avoid spam
         }
 
         // Handle hopper deposit when we're close enough - no interaction needed, just drop items
         // This is handled by handleHopperDeposit() above when isDepositingToHopper is true
-        
+
         // If there is no currentTarget (a block close enough to be interacted with) walk if wanted
         currentTarget ?: run {
             // Only update walk target if NOT depositing to hopper and cooldown has passed
@@ -702,27 +702,27 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 player
             )
         )
-        
+
         if (rayTraceResult == null || rayTraceResult.type != HitResult.Type.BLOCK) {
             return@tickHandler
         }
 
         val blockPos = rayTraceResult.blockPos
         var state = blockPos.getState() ?: return@tickHandler
-        
-        
+
+
         if (isTargeted(state, blockPos)) {
             // Check if we're close enough for reliable breaking (4 blocks max)
             val distanceToTarget = player.pos.distanceTo(blockPos.toCenterPos())
             val tooFarForBreaking = distanceToTarget > 4.0
-            
+
             if (tooFarForBreaking) {
                 // Too far for reliable breaking - walk closer
                 autoWalk.walkTarget = blockPos.toCenterPos()
                 autoWalk.updateWalkTarget()
                 return@tickHandler
             }
-            
+
             if (fortune) {
                 // Swap to a fortune item to increase drops
                 Slots.Hotbar.maxByOrNull { it.itemStack.getEnchantment(Enchantments.FORTUNE) }
@@ -757,16 +757,16 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 // Traditional farmland check (below the targeted air block)
                 blockPos.offset(rayTraceResult.side).down()
             }
-            
+
             val plantingState = plantingPos.getState() ?: return@tickHandler
 
-            val canPlant = isFarmBlockWithAir(plantingState, plantingPos) || 
+            val canPlant = isFarmBlockWithAir(plantingState, plantingPos) ||
                           isJungleLogWithAirAround(plantingState, plantingPos)
-                          
+
             // Check if we're close enough for reliable planting (2 blocks max)
             val distanceToPlantingPos = player.pos.distanceTo(plantingPos.toCenterPos())
             val tooFarForPlanting = distanceToPlantingPos > 2.0
-            
+
             if (canPlant) {
                 if (tooFarForPlanting) {
                     // Too far for reliable planting - walk closer
@@ -774,7 +774,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     autoWalk.updateWalkTarget()
                     return@tickHandler
                 }
-                
+
                 // Close enough for planting
                 val item = when {
                     plantingState.block is FarmlandBlock -> itemForFarmland
@@ -788,13 +788,13 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 if (item != null) {
                     SilentHotbar.selectSlotSilently(this, item, AutoPlaceCrops.swapBackDelay.random())
                 }
-                
+
                 // For jungle logs (cocoa), we need to click on the side, not use doPlacement
                 if (isJungleLog(plantingState.block)) {
                     // Use right-click interaction for cocoa planting
                     player.swingHand(Hand.MAIN_HAND)
-                    
-                    
+
+
                     // Create BlockHitResult for the jungle log side
                     val jungleLogHitResult = createJungleLogHitResult(plantingPos, rayTraceResult)
                     if (jungleLogHitResult != null) {
@@ -821,7 +821,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
 
         for ((pos, state) in blocksToBreak) {
-            
+
             val raytraceResult = raytraceBlock(
                 player.eyePos,
                 pos,
@@ -829,11 +829,11 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 range = range.toDouble(),
                 wallsRange = wallRange.toDouble()
             )
-            
+
             if (raytraceResult == null) {
                 continue
             }
-            
+
             val (rotation, _) = raytraceResult
 
             // set currentTarget to the new target
@@ -875,7 +875,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
         for (pos in blocksToPlace) {
             val state = pos.getState() ?: continue
-            
+
             val rotation = if (isJungleLog(state.block)) {
                 // For cocoa, raytrace to an available side
                 val jungleLogResult = raytraceJungleLogSide(
@@ -884,7 +884,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     wallsRange = wallRange.toDouble(),
                     pos
                 ) ?: continue
-                
+
                 jungleLogResult.first
             } else {
                 // For regular crops, plant on the upper side
@@ -894,11 +894,11 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     wallsRange = wallRange.toDouble(),
                     pos
                 ) ?: continue
-                
+
                 upperSideResult.rotation
             }
 
-            
+
             // set currentTarget to the new target
             currentTarget = pos
             // Reset micro-movement counters for new target
@@ -937,7 +937,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             }
             return
         }
-        
+
         // If no standard targets found, try with increased radius for cocoa blocks
         if (AutoGarden.enabled && AutoGarden.targetCocoa) {
             val increasedRadius = radius + 0.5f
@@ -966,21 +966,21 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             return
         }
     }
-    
+
 
     @Suppress("ReturnCount")
     private fun handleBoneMealApplication() {
         val currentTime = System.currentTimeMillis()
-        
+
         // Check if enough time has passed since last bone meal application
         if (currentTime - lastBoneMealTime < AutoBoneMeal.boneMealDelay) return
-        
+
         // Reset bone mealed positions periodically to allow re-treatment
         if (currentTime - lastBoneMealResetTime > AutoBoneMeal.resetInterval) {
             boneMealedPositions.clear()
             lastBoneMealResetTime = currentTime
         }
-        
+
         val boneMealSlot = player.inventory.main.indexOfFirst { it.item == Items.BONE_MEAL }
         if (boneMealSlot == -1) return
 
@@ -989,7 +989,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
 
         // Filter out already bone mealed positions for even distribution
         val unprocessedCrops = cropsNeedingBoneMeal.filter { it !in boneMealedPositions }
-        
+
         val targetCrop = if (unprocessedCrops.isNotEmpty()) {
             // Prioritize unprocessed crops for even distribution
             unprocessedCrops.minByOrNull { player.squaredDistanceTo(it.toCenterPos()) }
@@ -1011,10 +1011,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             targetCrop,
             false
         )
-        
+
         player.swingHand(Hand.MAIN_HAND)
         interaction.interactBlock(player, Hand.MAIN_HAND, blockHitResult)
-        
+
         // Mark this position as bone mealed and update timing
         boneMealedPositions.add(targetCrop)
         lastBoneMealTime = currentTime
@@ -1071,8 +1071,8 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> true // Allow bone meal on other crops by default
         }
     }
-    
-    
+
+
 
     fun isTargeted(state: BlockState, pos: BlockPos): Boolean {
         return when {
@@ -1081,7 +1081,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> isTargetedByDefault(state, pos)
         }
     }
-    
+
     private fun isTargetedByAutoGarden(state: BlockState): Boolean {
         return when (val block = state.block) {
             is CropBlock -> isAutoGardenCropReady(block, state)
@@ -1092,7 +1092,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> false
         }
     }
-    
+
     private fun isAutoGardenCropReady(block: CropBlock, state: BlockState): Boolean {
         val shouldTarget = when (block) {
             Blocks.WHEAT -> AutoGarden.targetWheat
@@ -1101,10 +1101,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             Blocks.BEETROOTS -> AutoGarden.targetBeetroot
             else -> false
         }
-        
+
         return shouldTarget && block.isMature(state)
     }
-    
+
     private fun isTargetedByCropFilter(state: BlockState, pos: BlockPos): Boolean {
         return when (val block = state.block) {
             is PumpkinBlock -> CropFilter.pumpkin
@@ -1119,10 +1119,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> false
         }
     }
-    
+
     private fun isCropFilterCropReady(block: CropBlock, state: BlockState): Boolean {
         if (!block.isMature(state)) return false
-        
+
         return when (block) {
             Blocks.WHEAT -> CropFilter.wheat
             Blocks.CARROTS -> CropFilter.carrot
@@ -1131,7 +1131,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             else -> true
         }
     }
-    
+
     private fun isTargetedByDefault(state: BlockState, pos: BlockPos): Boolean {
         return when (val block = state.block) {
             is PumpkinBlock -> true
@@ -1167,7 +1167,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
      */
     private fun isJungleLogWithAirAround(state: BlockState, pos: BlockPos): Boolean {
         if (!isJungleLog(state.block)) return false
-        
+
         // Check if there's air on any horizontal side for cocoa placement
         val directions = arrayOf(
             net.minecraft.util.math.Direction.NORTH,
@@ -1175,7 +1175,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             net.minecraft.util.math.Direction.EAST,
             net.minecraft.util.math.Direction.WEST
         )
-        
+
         return directions.any { direction ->
             val adjacentPos = pos.offset(direction)
             val adjacentState = adjacentPos.getState()
@@ -1207,12 +1207,12 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             net.minecraft.util.math.Direction.EAST,
             net.minecraft.util.math.Direction.WEST
         )
-        
+
         // Try each horizontal direction to find an available side
         for (direction in directions) {
             val adjacentPos = pos.offset(direction)
             val adjacentState = adjacentPos.getState()
-            
+
             // Check if this side has air for cocoa placement
             if (adjacentState?.isAir == true) {
                 // Calculate target point on the side of the jungle log
@@ -1221,10 +1221,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     0.0,  // Center height
                     direction.offsetZ * 0.5
                 )
-                
+
                 // Create rotation to look at this side
                 val rotation = getRotationTo(eyePos, targetVec)
-                
+
                 // Check if we can reach this side
                 val distance = eyePos.distanceTo(targetVec)
                 if (distance <= range) {
@@ -1232,7 +1232,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 }
             }
         }
-        
+
         return null
     }
 
@@ -1242,10 +1242,10 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
     private fun getRotationTo(from: Vec3d, to: Vec3d): Rotation {
         val diff = to.subtract(from)
         val distance = kotlin.math.sqrt(diff.x * diff.x + diff.z * diff.z)
-        
+
         val yaw = (kotlin.math.atan2(diff.z, diff.x) * 180.0 / kotlin.math.PI - 90.0).toFloat()
         val pitch = (-kotlin.math.atan2(diff.y, distance) * 180.0 / kotlin.math.PI).toFloat()
-        
+
         return Rotation(yaw, pitch)
     }
 
@@ -1254,7 +1254,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
      */
     @Suppress("UnusedParameter")
     private fun createJungleLogHitResult(
-        jungleLogPos: BlockPos, 
+        jungleLogPos: BlockPos,
         rayTraceResult: net.minecraft.util.hit.BlockHitResult
     ): net.minecraft.util.hit.BlockHitResult? {
         val directions = arrayOf(
@@ -1263,12 +1263,12 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             net.minecraft.util.math.Direction.EAST,
             net.minecraft.util.math.Direction.WEST
         )
-        
+
         // Find an available side with air
         for (direction in directions) {
             val adjacentPos = jungleLogPos.offset(direction)
             val adjacentState = adjacentPos.getState()
-            
+
             if (adjacentState?.isAir == true) {
                 // Create hit result for this side of the jungle log
                 val hitPos = jungleLogPos.toCenterPos().add(
@@ -1276,7 +1276,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     0.0,
                     direction.offsetZ * 0.5
                 )
-                
+
                 return net.minecraft.util.hit.BlockHitResult(
                     hitPos,
                     direction,
@@ -1285,7 +1285,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 )
             }
         }
-        
+
         return null
     }
 
