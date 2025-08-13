@@ -12,20 +12,16 @@ import net.ccbluex.liquidbounce.utils.client.variable
 import net.ccbluex.liquidbounce.utils.client.mc
 import net.ccbluex.liquidbounce.utils.entity.withStrafe
 import net.minecraft.util.math.Vec3d
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.io.File
 import kotlin.math.*
 
-@Serializable
 data class PointWalkConfig(
     val waypoints: List<SerializableVec3d>,
     val name: String
 )
 
-@Serializable
 data class SerializableVec3d(
     val x: Double,
     val y: Double, 
@@ -56,7 +52,7 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
     private var waitCounter = 0
     
     private val configDirectory = File(mc.runDirectory, "liquidbounce/pointwalk")
-    private val json = Json { prettyPrint = true }
+    private val gson = Gson()
 
     enum class WalkMode(override val choiceName: String) : NamedChoice {
         STRAFE("Strafe"),
@@ -230,7 +226,7 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
             )
             
             val configFile = File(configDirectory, "$name.json")
-            configFile.writeText(json.encodeToString(config))
+            configFile.writeText(gson.toJson(config))
             
             chat(regular("Config "), variable(name), regular(" saved with "), 
                  variable("${waypoints.size}"), regular(" waypoints"))
@@ -249,7 +245,7 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
             }
             
             val configText = configFile.readText()
-            val config = json.decodeFromString<PointWalkConfig>(configText)
+            val config = gson.fromJson(configText, PointWalkConfig::class.java)
             
             waypoints.clear()
             waypoints.addAll(config.waypoints.map { it.toVec3d() })
