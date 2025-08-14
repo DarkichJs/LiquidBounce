@@ -161,22 +161,59 @@ object ModuleAutoSeller : ClientModule("AutoSeller", Category.MISC) {
     )
 
     private fun findFullStacksToSell(): SellData? {
-        // First check hotbar slots (0-8)
-        findFullStackInHotbar()?.let { return it }
-        
-        // Then check main inventory slots (9-35)
-        return findFullStackInInventory()
+        // For each supported item, count total stacks and only sell if we have more than 1 stack
+        for ((item, itemData) in supportedItems) {
+            val stackCount = countFullStacks(item)
+            if (stackCount > 1) {
+                // Find a stack to sell (we have more than 1, so we can sell one)
+                findFullStackToSell(item, itemData)?.let { return it }
+            }
+        }
+        return null
     }
     
-    private fun findFullStackInHotbar(): SellData? {
+    private fun countFullStacks(item: net.minecraft.item.Item): Int {
+        val inventory = player.inventory
+        var stackCount = 0
+        
+        // Count in hotbar (0-8)
+        for (slot in 0 until 9) {
+            val stack = inventory.getStack(slot)
+            if (stack.item == item && stack.count >= stack.maxCount) {
+                stackCount++
+            }
+        }
+        
+        // Count in main inventory (9-35)
+        for (slot in 9 until inventory.main.size) {
+            val stack = inventory.main[slot]
+            if (stack.item == item && stack.count >= stack.maxCount) {
+                stackCount++
+            }
+        }
+        
+        if (debug && stackCount > 0) {
+            val itemData = supportedItems[item]
+            println("[AutoSeller] Found $stackCount full stacks of ${itemData?.name ?: item}")
+        }
+        
+        return stackCount
+    }
+    
+    private fun findFullStackToSell(item: net.minecraft.item.Item, itemData: ItemData): SellData? {
+        // First check hotbar slots (0-8)
+        findFullStackInHotbar(item, itemData)?.let { return it }
+        
+        // Then check main inventory slots (9-35)
+        return findFullStackInInventory(item, itemData)
+    }
+    
+    private fun findFullStackInHotbar(item: net.minecraft.item.Item, itemData: ItemData): SellData? {
         val inventory = player.inventory
         
         for (slot in 0 until 9) {
             val stack = inventory.getStack(slot)
-            if (stack.isEmpty) continue
-            
-            val itemData = supportedItems[stack.item] ?: continue
-            if (stack.count >= stack.maxCount) {
+            if (stack.item == item && stack.count >= stack.maxCount) {
                 if (debug) {
                     val msg = "[AutoSeller] Found full stack in hotbar: ${stack.count}x " +
                             "${itemData.name} in slot $slot"
@@ -189,15 +226,12 @@ object ModuleAutoSeller : ClientModule("AutoSeller", Category.MISC) {
         return null
     }
     
-    private fun findFullStackInInventory(): SellData? {
+    private fun findFullStackInInventory(item: net.minecraft.item.Item, itemData: ItemData): SellData? {
         val inventory = player.inventory
         
         for (slot in 9 until inventory.main.size) {
             val stack = inventory.main[slot]
-            if (stack.isEmpty) continue
-            
-            val itemData = supportedItems[stack.item] ?: continue
-            if (stack.count >= stack.maxCount) {
+            if (stack.item == item && stack.count >= stack.maxCount) {
                 if (debug) {
                     val msg = "[AutoSeller] Found full stack in inventory: ${stack.count}x " +
                             "${itemData.name} in slot $slot"

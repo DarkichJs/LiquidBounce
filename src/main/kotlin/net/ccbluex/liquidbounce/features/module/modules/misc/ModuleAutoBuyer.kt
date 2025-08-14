@@ -55,7 +55,8 @@ object ModuleAutoBuyer : ClientModule("AutoBuyer", Category.MISC) {
     enum class CropType(override val choiceName: String, val item: net.minecraft.item.Item) : NamedChoice {
         CARROT("Carrot", Items.CARROT),
         POTATO("Potato", Items.POTATO),
-        WHEAT("Wheat", Items.WHEAT_SEEDS)
+        WHEAT("Wheat", Items.WHEAT_SEEDS),
+        BEETROOT("Beetroot", Items.BEETROOT)
     }
 
     // State management
@@ -287,6 +288,7 @@ object ModuleAutoBuyer : ClientModule("AutoBuyer", Category.MISC) {
                     CropType.CARROT -> displayName.contains("морковь") || displayName.contains("carrot")
                     CropType.POTATO -> displayName.contains("картофель") || displayName.contains("potato") 
                     CropType.WHEAT -> displayName.contains("пшеница") || displayName.contains("wheat")
+                    CropType.BEETROOT -> displayName.contains("свекла") || displayName.contains("beetroot") || displayName.contains("свёкла")
                 }
                 
                 if (isTargetCrop) {

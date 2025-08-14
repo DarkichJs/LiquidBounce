@@ -122,6 +122,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
         val targetPumpkin by boolean("TargetPumpkin", true)
         val targetMelon by boolean("TargetMelon", true)
         val targetCocoa by boolean("TargetCocoa", true)
+        val targetSweetBerries by boolean("TargetSweetBerries", true)
     }
 
     private val autoWalk = tree(AutoFarmAutoWalk)
@@ -304,7 +305,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                     totalSeeds += stack.count
                 }
                 Items.WHEAT, Items.CARROT, Items.POTATO, Items.POISONOUS_POTATO,
-                Items.BEETROOT, Items.NETHER_WART -> {
+                Items.BEETROOT, Items.NETHER_WART, Items.SWEET_BERRIES -> {
                     hasExcessLoot = true
                 }
             }
@@ -342,7 +343,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
                 stack.item in listOf(Items.WHEAT, Items.CARROT, Items.POTATO,
                     Items.POISONOUS_POTATO, Items.BEETROOT, Items.NETHER_WART,
                     Items.PUMPKIN, Items.MELON_SLICE, Items.SUGAR_CANE, Items.CACTUS,
-                    Items.KELP, Items.BAMBOO, Items.COCOA_BEANS) -> {
+                    Items.KELP, Items.BAMBOO, Items.COCOA_BEANS, Items.SWEET_BERRIES) -> {
                     itemsToDeposit.add(slot to stack.count)
                     // Will deposit crop - no notification needed
                 }
@@ -1089,6 +1090,7 @@ object ModuleAutoFarm : ClientModule("AutoFarm", Category.WORLD) {
             is PumpkinBlock -> AutoGarden.targetPumpkin
             Blocks.MELON -> AutoGarden.targetMelon
             is CocoaBlock -> AutoGarden.targetCocoa && state.get(CocoaBlock.AGE) >= 2
+            is SweetBerryBushBlock -> AutoGarden.targetSweetBerries && state.get(SweetBerryBushBlock.AGE) >= 3
             else -> false
         }
     }

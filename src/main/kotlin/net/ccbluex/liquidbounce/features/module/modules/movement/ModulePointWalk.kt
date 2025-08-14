@@ -42,6 +42,7 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
     private val mode by enumChoice("Mode", WalkMode.STRAFE)
     private val rotateToTarget by boolean("RotateToTarget", true)
     private val rotationSpeed by float("RotationSpeed", 2.0f, 0.1f..10.0f)
+    private val keepSprint by boolean("KeepSprint", true)
     private val autoRun by boolean("AutoRun", false)
     private val announceWaypoint by boolean("AnnounceWaypoint", false)
     private val waitTicks by int("WaitTicks", 0, 0..100)
@@ -127,6 +128,11 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
         val playerPos = player.pos
         val distance = playerPos.distanceTo(currentTarget)
 
+        // Maintain sprinting if KeepSprint is enabled
+        if (keepSprint && !player.isSprinting) {
+            player.isSprinting = true
+        }
+
         if (distance <= range) {
             val oldIndex = currentTargetIndex
             currentTargetIndex = (currentTargetIndex + 1) % waypoints.size
@@ -173,6 +179,11 @@ object ModulePointWalk : ClientModule("PointWalk", Category.MOVEMENT) {
 
         if (distance <= range) {
             return@handler
+        }
+
+        // Enable sprinting if KeepSprint is enabled
+        if (keepSprint && !player.isSprinting) {
+            player.isSprinting = true
         }
 
         when (mode) {
